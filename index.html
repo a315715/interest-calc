@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>利息收入反推計算</title>
+<style>
+  :root {
+    --accent-a: #0f5c5c;
+    --accent-a-light: #e6f0f0;
+    --accent-b: #9a5b13;
+    --accent-b-light: #f5ece0;
+    --ink: #2b2b28;
+    --sub: #6b6b64;
+    --bg: #faf9f6;
+    --card: #ffffff;
+    --border: #e2e0d8;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Helvetica Neue", sans-serif;
+    font-size: 19px;
+  }
+  .wrap {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 24px 18px 60px;
+  }
+  h1 {
+    font-size: 26px;
+    font-weight: 700;
+    margin: 4px 0 6px;
+  }
+  .subtitle {
+    font-size: 16px;
+    color: var(--sub);
+    line-height: 1.5;
+    margin: 0 0 24px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 22px;
+  }
+  .card-header {
+    padding: 16px 20px;
+    color: #fff;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  .card.a .card-header { background: var(--accent-a); }
+  .card.b .card-header { background: var(--accent-b); }
+  .card-body { padding: 20px; }
+
+  .field-label {
+    font-size: 15px;
+    color: var(--sub);
+    margin-bottom: 8px;
+    display: block;
+  }
+  .toggle-group {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    background: #f1f0ea;
+    border-radius: 12px;
+    padding: 5px;
+    margin-bottom: 22px;
+  }
+  .toggle-btn {
+    border: none;
+    background: transparent;
+    padding: 12px 4px;
+    font-size: 16px;
+    border-radius: 9px;
+    color: var(--sub);
+    font-family: inherit;
+    font-weight: 500;
+  }
+  .card.a .toggle-btn.active { background: #fff; color: var(--accent-a); box-shadow: 0 1px 3px rgba(0,0,0,0.12); font-weight: 700; }
+  .card.b .toggle-btn.active { background: #fff; color: var(--accent-b); box-shadow: 0 1px 3px rgba(0,0,0,0.12); font-weight: 700; }
+
+  .input-row { margin-bottom: 18px; }
+  input[type="number"] {
+    width: 100%;
+    font-size: 22px;
+    padding: 14px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    font-family: inherit;
+    color: var(--ink);
+    background: #fff;
+  }
+  .card.a input:focus { outline: none; border-color: var(--accent-a); }
+  .card.b input:focus { outline: none; border-color: var(--accent-b); }
+
+  .tax-row input { font-size: 18px; padding: 10px 12px; }
+
+  .result-box {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 2px dashed var(--border);
+  }
+  .result-label { font-size: 15px; color: var(--sub); margin-bottom: 4px; }
+  .result-value { font-size: 36px; font-weight: 800; line-height: 1.2; word-break: break-word; }
+  .card.a .result-value { color: var(--accent-a); }
+  .card.b .result-value { color: var(--accent-b); }
+  .result-placeholder { font-size: 17px; color: #a8a69c; padding: 4px 0; }
+
+  .footnote {
+    font-size: 14px;
+    color: #999588;
+    line-height: 1.7;
+    margin-top: 8px;
+  }
+
+  @media (max-width: 400px) {
+    body { font-size: 18px; }
+    .result-value { font-size: 30px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>利息收入反推計算</h1>
+  <p class="subtitle">輸入其中兩項（月收入 / 本金 / 年利率），自動算出第三項。方案 A、B 可同時比較。</p>
+
+  <div class="card a" id="card-a"></div>
+  <div class="card b" id="card-b"></div>
+
+  <p class="footnote">
+    說明：年利率採單利概算（月收入 × 12 ÷ 本金）。若為複利型商品，實際數字會略有差異。稅率欄位可用來概算扣除利息所得稅後，達到目標月收入所需的名目利率或本金。
+  </p>
+</div>
+
+<script>
+const fmt = (n) => {
+  if (n === null || n === undefined || isNaN(n) || !isFinite(n)) return "—";
+  return Math.round(n).toLocaleString("zh-TW");
+};
+const fmtRate = (n) => {
+  if (n === null || n === undefined || isNaN(n) || !isFinite(n)) return "—";
+  return n.toFixed(2);
+};
+
+const state = {
+  a: { solveFor: "principal", monthly: "10000", rate: "3", principal: "", tax: "0" },
+  b: { solveFor: "principal", monthly: "10000", rate: "5", principal: "", tax: "0" },
+};
+
+const fieldsMeta = [
+  { key: "monthly", label: "目標月收入", unit: "元" },
+  { key: "principal", label: "本金", unit: "元" },
+  { key: "rate", label: "年利率", unit: "%" },
+];
+
+function compute(d) {
+  const m = parseFloat(d.monthly);
+  const r = parseFloat(d.rate);
+  const p = parseFloat(d.principal);
+  const t = parseFloat(d.tax) || 0;
+  const effRate = (rr) => rr * (1 - t / 100);
+
+  if (d.solveFor === "principal") {
+    if (isNaN(m) || isNaN(r) || r <= 0) return null;
+    const annualIncome = m * 12;
+    const eff = effRate(r) / 100;
+    if (eff <= 0) return null;
+    return { type: "principal", value: annualIncome / eff };
+  }
+  if (d.solveFor === "rate") {
+    if (isNaN(m) || isNaN(p) || p <= 0) return null;
+    const annualIncome = m * 12;
+    const grossRate = (annualIncome / p) * 100;
+    const netAdjust = 1 - t / 100;
+    if (netAdjust <= 0) return null;
+    return { type: "rate", value: grossRate / netAdjust };
+  }
+  if (d.solveFor === "monthly") {
+    if (isNaN(p) || isNaN(r)) return null;
+    const eff = effRate(r) / 100;
+    return { type: "monthly", value: (p * eff) / 12 };
+  }
+  return null;
+}
+
+function render(cardId, label, d) {
+  const card = document.getElementById(cardId);
+  const result = compute(d);
+
+  const toggles = fieldsMeta.map(f => `
+    <button class="toggle-btn ${d.solveFor === f.key ? 'active' : ''}" data-solve="${f.key}">${f.label}</button>
+  `).join("");
+
+  const inputs = fieldsMeta.filter(f => f.key !== d.solveFor).map(f => `
+    <div class="input-row">
+      <label class="field-label">${f.label}（${f.unit}）</label>
+      <input type="number" inputmode="decimal" data-field="${f.key}" value="${d[f.key]}" placeholder="輸入${f.label}">
+    </div>
+  `).join("");
+
+  let resultHtml;
+  if (result) {
+    let rl, rv;
+    if (result.type === "principal") { rl = "需要的本金"; rv = `NT$ ${fmt(result.value)}`; }
+    else if (result.type === "rate") { rl = "需要的年利率"; rv = `${fmtRate(result.value)}%`; }
+    else { rl = "預估月收入"; rv = `NT$ ${fmt(result.value)}`; }
+    resultHtml = `<div class="result-label">${rl}</div><div class="result-value">${rv}</div>`;
+  } else {
+    resultHtml = `<div class="result-placeholder">請填入上方欄位以計算</div>`;
+  }
+
+  card.innerHTML = `
+    <div class="card-header">${label}</div>
+    <div class="card-body">
+      <label class="field-label">要反推哪一項？</label>
+      <div class="toggle-group">${toggles}</div>
+      ${inputs}
+      <div class="input-row tax-row">
+        <label class="field-label">利息所得稅率（%，選填，預設 0）</label>
+        <input type="number" inputmode="decimal" data-field="tax" value="${d.tax}" placeholder="0">
+      </div>
+      <div class="result-box">${resultHtml}</div>
+    </div>
+  `;
+
+  card.querySelectorAll(".toggle-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      d.solveFor = btn.dataset.solve;
+      render(cardId, label, d);
+    });
+  });
+  card.querySelectorAll("input").forEach(inp => {
+    inp.addEventListener("input", () => {
+      d[inp.dataset.field] = inp.value;
+      // re-render only the result box + inputs list won't lose focus if we don't re-render whole card
+      updateResultOnly(cardId, d);
+    });
+  });
+}
+
+function updateResultOnly(cardId, d) {
+  const card = document.getElementById(cardId);
+  const result = compute(d);
+  const box = card.querySelector(".result-box");
+  if (result) {
+    let rl, rv;
+    if (result.type === "principal") { rl = "需要的本金"; rv = `NT$ ${fmt(result.value)}`; }
+    else if (result.type === "rate") { rl = "需要的年利率"; rv = `${fmtRate(result.value)}%`; }
+    else { rl = "預估月收入"; rv = `NT$ ${fmt(result.value)}`; }
+    box.innerHTML = `<div class="result-label">${rl}</div><div class="result-value">${rv}</div>`;
+  } else {
+    box.innerHTML = `<div class="result-placeholder">請填入上方欄位以計算</div>`;
+  }
+}
+
+render("card-a", "方案 A", state.a);
+render("card-b", "方案 B", state.b);
+</script>
+</body>
+</html>
